@@ -107,7 +107,7 @@ func TestExchangeRateReadRepository_List_Success(t *testing.T) {
 
 	repo := repositories.NewExchangeRateReadRepository(logger, db)
 
-	rates := []models.ExchangeRate{
+	rates := []models.ExchangeRateDB{
 		{ExchangeRateID: uuid.New(), FromCurrency: "USD", ToCurrency: "EUR", Rate: 1.23, CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		{ExchangeRateID: uuid.New(), FromCurrency: "EUR", ToCurrency: "USD", Rate: 0.81, CreatedAt: time.Now(), UpdatedAt: time.Now()},
 	}

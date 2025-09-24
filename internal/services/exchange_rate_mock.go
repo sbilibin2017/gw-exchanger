@@ -45,22 +45,22 @@ func (m *MockExchangeRateReader) Get(ctx context.Context, fromCurrency, toCurren
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockExchangeRateReaderMockRecorder) Get(ctx, fromCurrency, toCurrency interface{}) *gomock.Call {
+func (mr *MockExchangeRateReaderMockRecorder) Get(ctx, fromCurrency, toCurrency any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockExchangeRateReader)(nil).Get), ctx, fromCurrency, toCurrency)
 }
 
 // List mocks base method.
-func (m *MockExchangeRateReader) List(ctx context.Context) ([]models.ExchangeRate, error) {
+func (m *MockExchangeRateReader) List(ctx context.Context) ([]models.ExchangeRateDB, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "List", ctx)
-	ret0, _ := ret[0].([]models.ExchangeRate)
+	ret0, _ := ret[0].([]models.ExchangeRateDB)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // List indicates an expected call of List.
-func (mr *MockExchangeRateReaderMockRecorder) List(ctx interface{}) *gomock.Call {
+func (mr *MockExchangeRateReaderMockRecorder) List(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockExchangeRateReader)(nil).List), ctx)
 }

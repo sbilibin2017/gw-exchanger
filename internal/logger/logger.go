@@ -5,8 +5,8 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// New создаёт новый SugaredLogger с заданным уровнем логирования.
-// level — строка уровня, например "debug", "info", "warn", "error".
+// New creates a new SugaredLogger with the specified log level.
+// level — a string representing the log level, e.g., "debug", "info", "warn", "error".
 func New(level string) (*zap.SugaredLogger, error) {
 	lvl, err := zapcore.ParseLevel(level)
 	if err != nil {
