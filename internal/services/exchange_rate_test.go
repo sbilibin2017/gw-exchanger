@@ -1,4 +1,4 @@
-package services_test
+package services
 
 import (
 	"context"
@@ -6,130 +6,204 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-
 	"github.com/sbilibin2017/gw-exchanger/internal/models"
-	"github.com/sbilibin2017/gw-exchanger/internal/services"
+	pb "github.com/sbilibin2017/proto-exchange/exchange"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
-func getLogger(t *testing.T) *zap.SugaredLogger {
-	logger, err := zap.NewDevelopment()
-	require.NoError(t, err)
-	return logger.Sugar()
+// floatPtr helper
+func floatPtr(f float64) *float64 {
+	return &f
 }
 
-func TestExchangeRateService_GetExchangeRate(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockReader := services.NewMockExchangeRateReader(ctrl)
-	logger := getLogger(t)
-	service := services.NewExchangeRateService(logger, mockReader)
-	ctx := context.Background()
-
-	tests := []struct {
-		name       string
-		from       string
-		to         string
-		mockReturn *float64
-		mockError  error
-		wantRate   *float32
-		wantErr    bool
+func TestGetExchangeRateForCurrency(t *testing.T) {
+	testCases := []struct {
+		name          string
+		fromCurrency  string
+		toCurrency    string
+		mockSetup     func(t *testing.T) (*ExchangeRateService, *gomock.Controller)
+		expectError   bool
+		expectNilResp bool
+		expectedRate  float32
 	}{
 		{
-			name:       "rate found",
-			from:       "USD",
-			to:         "EUR",
-			mockReturn: float64Ptr(1.23),
-			wantRate:   float32Ptr(1.23),
+			name:         "valid rate found",
+			fromCurrency: "USD",
+			toCurrency:   "RUB",
+			mockSetup: func(t *testing.T) (*ExchangeRateService, *gomock.Controller) {
+				ctrl := gomock.NewController(t)
+				mockReader := NewMockExchangeRateReader(ctrl)
+				mockReader.EXPECT().
+					Get(gomock.Any(), "USD", "RUB").
+					Return(floatPtr(75.5), nil)
+				svc := NewExchangeRateService(zap.NewNop().Sugar(), mockReader)
+				return svc, ctrl
+			},
+			expectError:   false,
+			expectNilResp: false,
+			expectedRate:  75.5,
 		},
 		{
-			name:       "rate not found",
-			from:       "USD",
-			to:         "JPY",
-			mockReturn: nil,
-			wantRate:   nil,
+			name:         "rate not found",
+			fromCurrency: "USD",
+			toCurrency:   "EUR",
+			mockSetup: func(t *testing.T) (*ExchangeRateService, *gomock.Controller) {
+				ctrl := gomock.NewController(t)
+				mockReader := NewMockExchangeRateReader(ctrl)
+				mockReader.EXPECT().
+					Get(gomock.Any(), "USD", "EUR").
+					Return(nil, nil)
+				svc := NewExchangeRateService(zap.NewNop().Sugar(), mockReader)
+				return svc, ctrl
+			},
+			expectError:   false,
+			expectNilResp: true,
 		},
 		{
-			name:      "error from reader",
-			from:      "USD",
-			to:        "GBP",
-			mockError: errors.New("db error"),
-			wantErr:   true,
+			name:         "reader returns error",
+			fromCurrency: "USD",
+			toCurrency:   "RUB",
+			mockSetup: func(t *testing.T) (*ExchangeRateService, *gomock.Controller) {
+				ctrl := gomock.NewController(t)
+				mockReader := NewMockExchangeRateReader(ctrl)
+				mockReader.EXPECT().
+					Get(gomock.Any(), "USD", "RUB").
+					Return(nil, errors.New("db error"))
+				svc := NewExchangeRateService(zap.NewNop().Sugar(), mockReader)
+				return svc, ctrl
+			},
+			expectError:   true,
+			expectNilResp: true,
+		},
+		{
+			name:         "unsupported from currency",
+			fromCurrency: "GBP",
+			toCurrency:   "USD",
+			mockSetup: func(t *testing.T) (*ExchangeRateService, *gomock.Controller) {
+				svc := NewExchangeRateService(zap.NewNop().Sugar(), nil)
+				return svc, nil
+			},
+			expectError:   true,
+			expectNilResp: true,
+		},
+		{
+			name:         "unsupported to currency",
+			fromCurrency: "USD",
+			toCurrency:   "JPY",
+			mockSetup: func(t *testing.T) (*ExchangeRateService, *gomock.Controller) {
+				svc := NewExchangeRateService(zap.NewNop().Sugar(), nil)
+				return svc, nil
+			},
+			expectError:   true,
+			expectNilResp: true,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockReader.EXPECT().
-				Get(ctx, tt.from, tt.to).
-				Return(tt.mockReturn, tt.mockError)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, ctrl := tc.mockSetup(t)
+			if ctrl != nil {
+				defer ctrl.Finish()
+			}
 
-			got, err := service.GetExchangeRate(ctx, tt.from, tt.to)
-			if tt.wantErr {
+			resp, err := svc.GetExchangeRateForCurrency(context.Background(), &pb.CurrencyRequest{
+				FromCurrency: tc.fromCurrency,
+				ToCurrency:   tc.toCurrency,
+			})
+
+			if tc.expectError {
 				assert.Error(t, err)
-				assert.Nil(t, got)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.wantRate, got)
+			}
+
+			if tc.expectNilResp {
+				assert.Nil(t, resp)
+			} else {
+				assert.NotNil(t, resp)
+				assert.Equal(t, tc.expectedRate, resp.Rate)
 			}
 		})
 	}
 }
 
-func TestExchangeRateService_GetAllExchangeRates(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockReader := services.NewMockExchangeRateReader(ctrl)
-	logger := getLogger(t)
-	service := services.NewExchangeRateService(logger, mockReader)
-	ctx := context.Background()
-
-	exampleRates := []models.ExchangeRate{
-		{FromCurrency: "USD", ToCurrency: "EUR", Rate: 1.23},
-		{FromCurrency: "EUR", ToCurrency: "USD", Rate: 0.81},
-	}
-
-	tests := []struct {
-		name       string
-		mockReturn []models.ExchangeRate
-		mockError  error
-		want       []models.ExchangeRate
-		wantErr    bool
+func TestGetExchangeRates(t *testing.T) {
+	testCases := []struct {
+		name          string
+		mockSetup     func(t *testing.T) (*ExchangeRateService, *gomock.Controller)
+		expectError   bool
+		expectedRates map[string]float32
 	}{
 		{
-			name:       "success",
-			mockReturn: exampleRates,
-			want:       exampleRates,
+			name: "returns multiple rates",
+			mockSetup: func(t *testing.T) (*ExchangeRateService, *gomock.Controller) {
+				ctrl := gomock.NewController(t)
+				mockReader := NewMockExchangeRateReader(ctrl)
+				mockReader.EXPECT().
+					List(gomock.Any()).
+					Return([]models.ExchangeRateDB{
+						{ToCurrency: "RUB", Rate: 75.5},
+						{ToCurrency: "EUR", Rate: 0.92},
+					}, nil)
+				svc := NewExchangeRateService(zap.NewNop().Sugar(), mockReader)
+				return svc, ctrl
+			},
+			expectError: false,
+			expectedRates: map[string]float32{
+				"RUB": 75.5,
+				"EUR": 0.92,
+			},
 		},
 		{
-			name:      "error from reader",
-			mockError: errors.New("db error"),
-			wantErr:   true,
+			name: "no rates found",
+			mockSetup: func(t *testing.T) (*ExchangeRateService, *gomock.Controller) {
+				ctrl := gomock.NewController(t)
+				mockReader := NewMockExchangeRateReader(ctrl)
+				mockReader.EXPECT().
+					List(gomock.Any()).
+					Return([]models.ExchangeRateDB{}, nil)
+				svc := NewExchangeRateService(zap.NewNop().Sugar(), mockReader)
+				return svc, ctrl
+			},
+			expectError:   false,
+			expectedRates: map[string]float32{},
+		},
+		{
+			name: "reader returns error",
+			mockSetup: func(t *testing.T) (*ExchangeRateService, *gomock.Controller) {
+				ctrl := gomock.NewController(t)
+				mockReader := NewMockExchangeRateReader(ctrl)
+				mockReader.EXPECT().
+					List(gomock.Any()).
+					Return(nil, errors.New("db error"))
+				svc := NewExchangeRateService(zap.NewNop().Sugar(), mockReader)
+				return svc, ctrl
+			},
+			expectError:   true,
+			expectedRates: nil,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockReader.EXPECT().
-				List(ctx).
-				Return(tt.mockReturn, tt.mockError)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, ctrl := tc.mockSetup(t)
+			defer func() {
+				if ctrl != nil {
+					ctrl.Finish()
+				}
+			}()
 
-			got, err := service.GetAllExchangeRates(ctx)
-			if tt.wantErr {
+			resp, err := svc.GetExchangeRates(context.Background(), &pb.Empty{})
+
+			if tc.expectError {
 				assert.Error(t, err)
-				assert.Nil(t, got)
+				assert.Nil(t, resp)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.want, got)
+				assert.NotNil(t, resp)
+				assert.Equal(t, tc.expectedRates, resp.Rates)
 			}
 		})
 	}
 }
-
-// helper functions
-func float64Ptr(f float64) *float64 { return &f }
-func float32Ptr(f float64) *float32 { v := float32(f); return &v }
